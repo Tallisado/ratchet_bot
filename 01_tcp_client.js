@@ -1,5 +1,4 @@
 var net = require('net');
-
 //rhub_client.js webui feature/1234
 
 function getBranchProfile(arg) {
@@ -11,21 +10,19 @@ function getBranchProfile(arg) {
 }
 
 var operationProfile = getBranchProfile(process.argv[2])
-operationProfile.feature = process.argv[3]
+operationProfile.action = process.argv[3]
+operationProfile.feature = process.argv[4]
+operationProfile.extend = process.argv[5] || 0
 
 console.log("Connection:");
 console.log(operationProfile);
 
 var stream = net.connect(operationProfile);
-stream.feature = operationProfile.feature;
-stream.on('data', function(data) {
-console.log('(Server Wrote): ' + data);
-})
-// stream.on('readable', function() {
-//   var chunk;
-//   while(chunk = stream.read()) {
-//     console.log('got from server: %j', chunk);
-//   }
-// })
+//stream.feature = operationProfile.feature;
 
-stream.write(stream.feature);
+stream.on('data', function(data) {
+	console.log('(Server Wrote): ' + data);
+	stream.end()
+})
+
+stream.write(JSON.stringify({'action': operationProfile.action, 'feature': operationProfile.feature, 'extend': operationProfile.extend}))

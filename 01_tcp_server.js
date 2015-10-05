@@ -1,3 +1,8 @@
+// arg list:
+// feature (saas-2222)
+// action (deployed, tests_failed, finished)
+// extend (10) / this is in minutes
+
 var TIMEOUT_CLIENT = 1000 // 10s
 var USER='superdave'
 var PASS='Password1'
@@ -7,11 +12,13 @@ var BUILDTYPEID='Test_BuildStuff'
 
 var net = require('net');
 var request = require('request');
+var mongoose = require('mongoose'),
+  JSONStream = require('JSONStream');
 
-var nodes = [
-  {name:'docker9', inuse: false},
-  {name:'docker10', inuse: false}
-]
+mongoose.connect('mongodb://localhost/ratchetdb');
+
+var Vm = require('./app/models/vm');
+var Deployment = require('./app/models/vm');
 
 var server = net.createServer(function (socket) {
     socket.on('error', function(err){
@@ -33,48 +40,53 @@ function buildUrl(buildType, keySets) {
   return parse( "http://%s:%s@%s:8111/httpAuth/action.html?add2Queue=%s&%s", USER, PASS, IP, buildType, keySets)
 }
 
-var client_list = []
-function updateTask(stream_obj, task) {
-  console.log(task);
-  switch (task) {
-    case 'feature_deploy': {
-      var is_new = true;
-      client_list.filter(function(v) {
-          if (v.feature == stream_obj.feature) {
-            console.log('feature_deploy collision: ' + stream_obj.feature)
-            var is_new = false;
-          }
+function updateDeployment(actionObj) {
+  Deployment.findOne({feature : actionObj.feature}, function (err, depItem) {
+    if (err) throw err;
+    if (depItem){
+      switch (actionObj.action) {
+        case "deployed":
+          console.log("(ratchetbot) Updating the feature to deployed: " + actionObj.feature);
+          // udpate the deployment
+          depItem.deployed = true;
+            depItem.save(function(err){
+              console.log("(ratchetbot) Updated the feature to deployed: " + actionObj.feature);
+          });
+          break;
+        // update test to fail
+        case "test_failed":
+          console.log("(ratchetbot) Updating the feature that tests failed: " + actionObj.feature);
+          // udpate the deployment
+          depItem.tests_failed = true;
+            depItem.save(function(err){
+              console.log("(ratchetbot) Updated the featured that tests failed: " + actionObj.feature);
+          });
+          break;
+        case "finished":
+          console.log("(ratchetbot) Updating the featured to finished: " + actionObj.feature);
+          // udpate the deployment
+          depItem.finished = true;
+            depItem.save(function(err){
+              console.log("(ratchetbot) Updated the featured to finished: " + actionObj.feature);
+          });
+          break;
+      }
+    } else {
+      if (actionObj.action != "deploy") {
+        console.log("(ratchetbot) tried to act on a feature that is not registered");
+        return;
+      }
+      var deployment = new Deployment({
+        feature: actionObj.feature
       });
-      if (is_new) {
-        console.log("ADDING NEW");
-        client_list.push({ 'feature': stream_obj.feature, 'id': stream_obj.id, 'state': 'deploying', 'date': (new Date()-0) });
+      // call the built-in save method to save to the database
+      deployment.save(function(err) {
+        if (err) throw err;
+        console.log("(ratchetbot) Creating new deployment: " + actionObj.feature);
         callTeamCityAPI("Test_BuildStuff", "name=fweb&value=saas-2222")
-        break;
-      }
-      break;
-    }
-    case 'updatedPassedTest': {
-      var is_new = true;
-      client_list.filter(function(v) {
-          if (v.feature == stream_obj.feature) {
-            console.log('UPDATED TEST')
-            var is_new = false;
-          }
       });
-      if (is_new) {
-        console.log("No update.. feature??");
-      }
-      break;
     }
-    // case 'delete': {
-    //   for (var i = 0; i < client_list.length; i++) {
-    //     if (client_list[i].date < (new Date() - 10000)) {
-    //       client_list[i].state = 'offline';
-    //     }
-    //   }
-    //   break;
-    // }
-  }
+  });
 }
 
 function callTeamCityAPI(buildId, keySets) {
@@ -91,20 +103,37 @@ function callTeamCityAPI(buildId, keySets) {
 }
 
 
+
+
 server.listen(port);
 
 server.once('listening', function() {
   console.log('Server listening on port %d', port);
 });
 
+listenerSet = false;
+
+
 server.on('connection', function(stream) {
+  console.log('Client attached:');
   stream.id = Math.floor(Math.random() * 1000);
-  stream.on('data', function(data) {
-    console.log('Client is requesting task: ' + stream.id + ' ' + data)
-    stream.write("Hello Mr." + stream.id + ' (reference):' + data);
-    stream.device_name = ''+data; //needs to be a string, not byte array stream
-    updateTask(stream, 'feature_deploy');
+  var parser = JSONStream.parse();
+  stream.pipe(parser);
+  listenerSet = true
+  parser.on('data', function (actionObj) {
+    console.log('Client sending action:');
+    console.log(actionObj);
+
+    updateDeployment(actionObj);
+    stream.write("1");
   });
+  //
+  // stream.on('data', function(data) {
+  //   console.log('Client sending task: ' + stream.id + ' ' + data)
+  //   stream.write("Hello Mr." + stream.id + ' (reference):' + data);
+  //   stream.device_name = ''+data; //needs to be a string, not byte array stream
+  //   updateTask(stream, 'feature_deploy');
+  // });
 
   // var interval =
   // setInterval(function() {
