@@ -9,9 +9,9 @@ var deploymentSchema = new Schema({
   deployed: Boolean,
   build_failed: Boolean,
   build_error: Number,
-  tests_failed: Boolean,
+  test_failure: Boolean,
   meta: {
-    tcUrl: tcPath,
+    tcUrl: String,
     website: String
   },
   created_at: Date,

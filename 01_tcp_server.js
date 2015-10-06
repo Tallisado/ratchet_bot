@@ -1,6 +1,6 @@
 // arg list:
 // feature (saas-2222)
-// action (deployed, tests_failed, finished)
+// action (deploy, deployed, test_failure, finished)
 // extend (10) / this is in minutes
 
 var TIMEOUT_CLIENT = 1000 // 10s
@@ -12,13 +12,23 @@ var BUILDTYPEID='Test_BuildStuff'
 
 var net = require('net');
 var request = require('request');
-var mongoose = require('mongoose'),
-  JSONStream = require('JSONStream');
+var mongoose = require('mongoose');
+var JSONStream = require('JSONStream');
+var SlackBot = require('slackbots');
 
-mongoose.connect('mongodb://localhost/ratchetdb');
+var bot = new SlackBot({
+    token: 'xoxb-11660487557-claMDxXFYT94TEMSpxQH8lsI', // Add a bot https://my.slack.com/services/new/bot and put the token
+    name: 'Ratchet'
+});
+
+var bot_params = {
+    icon_emoji: ':space_invader:'
+};
+
+mongoose.connect('mongodb://localhost/rbot');
 
 var Vm = require('./app/models/vm');
-var Deployment = require('./app/models/vm');
+var Deployment = require('./app/models/deployment');
 
 var server = net.createServer(function (socket) {
     socket.on('error', function(err){
@@ -49,17 +59,19 @@ function updateDeployment(actionObj) {
           console.log("(ratchetbot) Updating the feature to deployed: " + actionObj.feature);
           // udpate the deployment
           depItem.deployed = true;
-            depItem.save(function(err){
-              console.log("(ratchetbot) Updated the feature to deployed: " + actionObj.feature);
+          depItem.save(function(err){
+            console.log("(ratchetbot) Updated the feature to deployed: " + actionObj.feature);
+            bot.postMessageToGroup('tallis-ratchet', 'I have deployed your feature, human!', bot_params);
           });
           break;
         // update test to fail
-        case "test_failed":
+        case "test_failure":
           console.log("(ratchetbot) Updating the feature that tests failed: " + actionObj.feature);
           // udpate the deployment
-          depItem.tests_failed = true;
-            depItem.save(function(err){
-              console.log("(ratchetbot) Updated the featured that tests failed: " + actionObj.feature);
+          depItem.test_failure = true;
+          depItem.save(function(err){
+            console.log("(ratchetbot) Updated the featured that tests failed: " + actionObj.feature);
+            bot.postMessageToGroup('tallis-ratchet', 'I have noticed failures in your feature, human!', bot_params);
           });
           break;
         case "finished":
@@ -68,6 +80,7 @@ function updateDeployment(actionObj) {
           depItem.finished = true;
             depItem.save(function(err){
               console.log("(ratchetbot) Updated the featured to finished: " + actionObj.feature);
+              bot.postMessageToGroup('tallis-ratchet', 'Human, your feature is finished its journey!', bot_params);
           });
           break;
       }
@@ -76,6 +89,8 @@ function updateDeployment(actionObj) {
         console.log("(ratchetbot) tried to act on a feature that is not registered");
         return;
       }
+
+      console.log("CREATING FEATURE WITH feature=" + actionObj.feature);
       var deployment = new Deployment({
         feature: actionObj.feature
       });
@@ -83,7 +98,8 @@ function updateDeployment(actionObj) {
       deployment.save(function(err) {
         if (err) throw err;
         console.log("(ratchetbot) Creating new deployment: " + actionObj.feature);
-        callTeamCityAPI("Test_BuildStuff", "name=fweb&value=saas-2222")
+        callTeamCityAPI("Test_BuildStuff", "name=feature&value=" + actionObj.feature)
+        bot.postMessageToGroup('tallis-ratchet', 'Greetings Human, Your feature is deploying: ', bot_params);
       });
     }
   });
@@ -95,10 +111,12 @@ function callTeamCityAPI(buildId, keySets) {
   request(url, function (error, response, body) {
     if (!error && response.statusCode == 200) {
        // Show the HTML for the Google homepage.
+      console.log("body") // Show the HTML for the Google homepage.
       console.log(body) // Show the HTML for the Google homepage.
     } else {
       console.log(error)
     }
+    return;
   })
 }
 
@@ -144,6 +162,21 @@ server.on('connection', function(stream) {
   //   console.log('got pong from peer with args %d and %d', myTimestamp, hisTimestamp);
   // });
 
+});
+
+
+bot.on('start', function() {
+    // more information about additional params https://api.slack.com/methods/chat.postMessage
+
+
+    // define channel, where bot exist. You can adjust it there https://my.slack.com/services
+    //bot.postMessageToChannel('general', 'meow!', params);
+
+    // define existing username instead of 'user_name'
+    bot.postMessageToUser('tallis', 'Blarg!', bot_params);
+
+    // define private group instead of 'private_group', where bot exist
+    bot.postMessageToGroup('tallis-ratchet', 'Blarg!', bot_params);
 });
 
 // timechill = (function () {
